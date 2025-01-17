@@ -276,9 +276,6 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
 
   #handleGenMsgDown(content: unknown) {
     const { success, data, error } = GenMsgDownSchema.safeParse(content);
-    if ((content as any).businType !== 'DigitalModel') {
-      this.#logger.debug('Unsupported businType:', content);
-    }
     if (!success) {
       this.#logger.error('GenMsgDown 解析失败:', error);
       return;

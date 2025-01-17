@@ -16,14 +16,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
+          cache: pnpm
 
-      - run: npm ci
+      - run: pnpm install
 
       - uses: changesets/action@v1
         id: changesets
         with:
-          publish: npm run release
+          publish: pnpm release
           title: "chore: version packages"
           commit: "chore: version packages"
         env:

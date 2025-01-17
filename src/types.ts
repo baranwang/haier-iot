@@ -1,5 +1,13 @@
 import type { z } from 'zod';
-import type { CommandParamsSchema, DevDigitalModelPropertySchema, DevDigitalModelSchema, DeviceInfoSchema, GetDevDigitalModelResponseSchema, TokenInfoSchema, WebSocketMessageSchema } from './schema';
+import type {
+  CommandParamsSchema,
+  DevDigitalModelPropertySchema,
+  DevDigitalModelSchema,
+  DeviceInfoSchema,
+  GetDevDigitalModelResponseSchema,
+  TokenInfoSchema,
+  WebSocketMessageSchema,
+} from './schema';
 
 export interface Logger {
   info(message: string, ...parameters: any[]): void;
@@ -22,7 +30,7 @@ export type GetDevDigitalModelResponse = z.infer<typeof GetDevDigitalModelRespon
 
 export type DevDigitalModel = z.infer<typeof DevDigitalModelSchema>;
 
-export type DevDigitalModelProperty = z.infer<typeof DevDigitalModelPropertySchema>
+export type DevDigitalModelProperty = z.infer<typeof DevDigitalModelPropertySchema>;
 
 export type CommandParams = z.infer<typeof CommandParamsSchema>;
 

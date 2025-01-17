@@ -45,11 +45,13 @@ export const GetFamilyListResponseSchema = HaierResponseSchema.extend({
 });
 
 export const DevicePermissionSchema = z.object({
-  auth: z.object({
-    control: z.boolean().nullish(),
-    set: z.boolean().nullish(),
-    view: z.boolean().nullish(),
-  }).nullish(),
+  auth: z
+    .object({
+      control: z.boolean().nullish(),
+      set: z.boolean().nullish(),
+      view: z.boolean().nullish(),
+    })
+    .nullish(),
   authType: z.string().nullish(),
 });
 
