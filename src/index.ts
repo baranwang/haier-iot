@@ -1,21 +1,25 @@
-import EventEmitter from 'node:events';
-import { HaierHttp } from './http';
-import type { CommandParams, DevDigitalModel, Options, WebSocketMessage } from './types';
-import { WebSocket, type MessageEvent } from 'ws';
-import { generateCommandArgs, generateSequenceId, inspectToString, safeJsonParse } from './utils';
-import { DevDigitalModelSchema, GenMsgDownSchema, WebSocketMessageSchema } from './schema';
-import { gunzipSync } from 'node:zlib';
-import { DiskMap } from './disk-map';
-import path from 'node:path';
 import { randomBytes } from 'node:crypto';
+import EventEmitter from 'node:events';
+import path from 'node:path';
+import { gunzipSync } from 'node:zlib';
+import { type MessageEvent, WebSocket } from 'ws';
 import { MAX_RECONNECT_ATTEMPTS } from './constants';
+import { DiskMap } from './disk-map';
+import { HaierHttp } from './http';
+import { DevDigitalModelSchema, GenMsgDownSchema, WebSocketMessageSchema } from './schema';
+import type { CommandParams, DevDigitalModel, Options, WebSocketMessage } from './types';
+import { generateCommandArgs, generateSequenceId, inspectToString, safeJsonParse } from './utils';
+
+export type { DeviceInfo, DevDigitalModel, DevDigitalModelProperty, CommandParams } from './types';
 
 interface HaierApiEvents {
   devDigitalModelUpdate: [deviceId: string, devDigitalModel: DevDigitalModel];
+  afterConnect: [];
 }
 
 interface WebSocketState {
   isConnecting: boolean;
+  subscribedDevices: string[];
   heartbeatInterval?: NodeJS.Timeout;
   reconnectAttempts: number;
 }
@@ -29,6 +33,7 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
 
   #state: WebSocketState = {
     isConnecting: false,
+    subscribedDevices: [],
     reconnectAttempts: 0,
   };
 
@@ -43,8 +48,8 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
   }
 
   set #ws(ws: WebSocket) {
-    this.#_ws = ws;
     this.#setupWebSocket(ws);
+    this.#_ws = ws;
   }
 
   get #logger() {
@@ -56,14 +61,22 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
   }
 
   async getFamilyList() {
-    return this.#httpAPI.getFamilyList();
+    try {
+      return this.#httpAPI.getFamilyList();
+    } catch (error) {
+      return [];
+    }
   }
 
   async getDevicesByFamilyId(familyId: string) {
-    return this.#httpAPI.getDevicesByFamilyId(familyId);
+    try {
+      return this.#httpAPI.getDevicesByFamilyId(familyId);
+    } catch (error) {
+      return [];
+    }
   }
 
-  async contactServer() {
+  async connect() {
     const url = await this.#httpAPI.getWssUrl();
     if (!url) {
       this.#logger.error('获取 WebSocket 地址失败');
@@ -80,6 +93,8 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
 
       this.#ws.once('open', () => {
         clearTimeout(timeout);
+        this.#logger.info('WebSocket 连接成功');
+        this.emit('afterConnect');
         resolve();
       });
 
@@ -99,17 +114,34 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
       this.#logger.error('WebSocket 连接未建立');
       return;
     }
+    this.#ws.send(
+      JSON.stringify({
+        agClientId: this.#httpAPI.clientId,
+        ...data,
+      }),
+      (err) => {
+        if (err) {
+          this.#logger.error('WebSocket 消息发送失败:', err);
+        }
+      },
+    );
     this.#logger.debug('⬆️', `[${topic}]`, inspectToString(content));
-    this.#ws.send(JSON.stringify(data));
+  }
+
+  subscribeDevices(deviceIds: string[]) {
+    this.#state.subscribedDevices = deviceIds;
+    this.sendMessage('BoundDevs', {
+      devs: deviceIds,
+    });
   }
 
   async getDevDigitalModel(deviceId: string) {
     if (this.#digitalModelCache.has(deviceId)) {
-      return this.#digitalModelCache.get(deviceId);
+      return this.#digitalModelCache.getAsync(deviceId);
     }
     const devDigitalModel = await this.#httpAPI.getDevDigitalModel(deviceId);
     if (devDigitalModel) {
-      this.#digitalModelCache.set(deviceId, devDigitalModel);
+      this.#digitalModelCache.setAsync(deviceId, devDigitalModel);
     }
     return devDigitalModel;
   }
@@ -120,7 +152,6 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
         throw new Error('WebSocket 连接未建立');
       }
       const { sn, commandList } = generateCommandArgs(deviceId, commands);
-      const digitalModel = this.#digitalModelCache.get(deviceId);
 
       this.sendMessage('BatchCmdReq', {
         sn,
@@ -128,23 +159,30 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
         data: commandList,
       });
 
-      if (digitalModel) {
-        commandList.forEach((command) => {
-          Object.entries(command.cmdArgs).forEach(([key, value]) => {
-            const property = digitalModel.attributes.find((item) => item.name === key);
-            if (property && 'value' in property) {
-              property.value = value;
-            }
+      this.#digitalModelCache
+        .getAsync(deviceId)
+        .then((digitalModel) => {
+          if (!digitalModel) {
+            return;
+          }
+          commandList.forEach((command) => {
+            Object.entries(command.cmdArgs).forEach(([key, value]) => {
+              const property = digitalModel.attributes.find((item) => item.name === key);
+              if (property && 'value' in property) {
+                property.value = value;
+              }
+            });
           });
+          this.#digitalModelCache.setAsync(deviceId, digitalModel);
+        })
+        .catch(() => {
+          // 弱依赖，不处理错误
         });
-        this.#digitalModelCache.set(deviceId, digitalModel);
-      }
     } catch (error) {
       this.#logger.warn('指令发送失败，尝试使用 HTTP API 发送');
       return this.#httpAPI.sendCommands(deviceId, commands);
     }
   }
-
   #setupWebSocket(ws: WebSocket) {
     ws.addEventListener('open', this.#heartbeat.bind(this));
     ws.addEventListener('message', this.#handleMessage.bind(this));
@@ -173,10 +211,17 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
     this.#state.isConnecting = true;
     this.#state.reconnectAttempts += 1;
     try {
-      const delay = 2000 * (2 ** this.#state.reconnectAttempts);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      const delay = 2000 * 2 ** this.#state.reconnectAttempts;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
       this.#logger.info('正在重新连接 WebSocket...');
-      await this.contactServer();
+      await this.connect();
+
+      if (this.#state.subscribedDevices.length > 0) {
+        this.#logger.info('重新订阅设备:', this.#state.subscribedDevices);
+        this.subscribeDevices(this.#state.subscribedDevices);
+      }
+
       this.#state.reconnectAttempts = 0;
     } catch (error) {
       this.#logger.error('WebSocket 重连失败:', error);
@@ -231,6 +276,9 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
 
   #handleGenMsgDown(content: unknown) {
     const { success, data, error } = GenMsgDownSchema.safeParse(content);
+    if ((content as any).businType !== 'DigitalModel') {
+      this.#logger.debug('Unsupported businType:', content);
+    }
     if (!success) {
       this.#logger.error('GenMsgDown 解析失败:', error);
       return;
@@ -258,3 +306,5 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
     }
   }
 }
+
+export default HaierIoT;

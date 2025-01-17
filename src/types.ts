@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { CommandParamsSchema, DevDigitalModelSchema, TokenInfoSchema, WebSocketMessageSchema } from './schema';
+import type { CommandParamsSchema, DevDigitalModelPropertySchema, DevDigitalModelSchema, DeviceInfoSchema, GetDevDigitalModelResponseSchema, TokenInfoSchema, WebSocketMessageSchema } from './schema';
 
 export interface Logger {
   info(message: string, ...parameters: any[]): void;
@@ -18,8 +18,14 @@ export interface Options {
 
 export type TokenInfo = z.infer<typeof TokenInfoSchema>;
 
+export type GetDevDigitalModelResponse = z.infer<typeof GetDevDigitalModelResponseSchema>;
+
 export type DevDigitalModel = z.infer<typeof DevDigitalModelSchema>;
+
+export type DevDigitalModelProperty = z.infer<typeof DevDigitalModelPropertySchema>
 
 export type CommandParams = z.infer<typeof CommandParamsSchema>;
 
 export type WebSocketMessage = z.infer<typeof WebSocketMessageSchema>;
+
+export type DeviceInfo = z.infer<typeof DeviceInfoSchema>;

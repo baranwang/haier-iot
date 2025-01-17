@@ -1,23 +1,27 @@
-# Rslib Project
+# Haier IoT
 
-## Setup
-
-Install the dependencies:
+## Installation
 
 ```bash
-pnpm install
+npm add haier-iot
 ```
 
-## Get Started
+## Usage
 
-Build the library:
+```javascript
+const HaierIoT = require('haier-iot');
 
-```bash
-pnpm build
+const haier = new HaierIoT({
+  username: 'username',
+  password: 'password',
+  storageDir: '/usr/local/var/haier-iot',
+});
+
+haier.connect()
+
+haier.subscribeDevices(deviceIds);
 ```
 
-Build the library in watch mode:
+## Who Uses It
 
-```bash
-pnpm dev
-```
+- [homebridge-plugin-haier](https://github.com/baranwang/homebridge-plugin-haier)

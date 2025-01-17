@@ -12,9 +12,10 @@ import {
   LoginResponseSchema,
   TokenInfoSchema,
 } from './schema';
-import type { CommandParams, Options, TokenInfo } from './types';
+import type { CommandParams, GetDevDigitalModelResponse, Options, TokenInfo } from './types';
 import { generateCommandArgs, generateSequenceId, inspectToString, safeJsonParse } from './utils';
 
+export type { DeviceInfo, DevDigitalModel } from './types';
 export class HaierHttp {
   #axios!: AxiosInstance;
 
@@ -26,6 +27,7 @@ export class HaierHttp {
       headers: {
         appId: APP_ID,
         appKey: APP_KEY,
+        clientId: this.clientId,
         language: 'zh-CN',
         timezone: '+8',
       },
@@ -182,14 +184,14 @@ export class HaierHttp {
   }
 
   async getDevDigitalModel(deviceId: string) {
-    const resp = await this.#axios.post(API_URL.GET_DEV_DIGITAL_MODEL, {
+    const resp = await this.#axios.post<GetDevDigitalModelResponse>(API_URL.GET_DEV_DIGITAL_MODEL, {
       deviceInfoList: [{ deviceId }],
     });
     const { success, data, error } = GetDevDigitalModelResponseSchema.safeParse(resp.data);
     if (!success) {
       throw error;
     }
-    return data?.detailInfo[deviceId];
+    return data.detailInfo[deviceId];
   }
 
   async sendCommands(deviceId: string, commands: CommandParams[]) {

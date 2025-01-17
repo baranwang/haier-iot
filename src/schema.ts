@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { safeJsonParse } from './utils';
+import { inspectToString, safeJsonParse } from './utils';
 
 export const HaierResponseSchema = z.object({
   retCode: z.string(),
@@ -46,11 +46,11 @@ export const GetFamilyListResponseSchema = HaierResponseSchema.extend({
 
 export const DevicePermissionSchema = z.object({
   auth: z.object({
-    control: z.boolean(),
-    set: z.boolean(),
-    view: z.boolean(),
-  }),
-  authType: z.string(),
+    control: z.boolean().nullish(),
+    set: z.boolean().nullish(),
+    view: z.boolean().nullish(),
+  }).nullish(),
+  authType: z.string().nullish(),
 });
 
 export const DeviceBaseInfoSchema = z.object({
@@ -58,18 +58,18 @@ export const DeviceBaseInfoSchema = z.object({
   deviceName: z.string(),
   devName: z.string(),
   bindTime: z.string(),
-  deviceType: z.string(),
+  deviceType: z.string().nullish(),
   familyId: z.string(),
   ownerId: z.string(),
-  permission: DevicePermissionSchema,
+  permission: DevicePermissionSchema.nullish(),
   wifiType: z.string().nullish(),
-  isOnline: z.boolean(),
+  isOnline: z.boolean().nullish(),
   ownerInfo: z.unknown(),
   subDeviceIds: z.string().nullish(),
   parentsDeviceId: z.string().nullish(),
-  deviceRole: z.null(),
+  deviceRole: z.unknown(),
   deviceRoleType: z.string().nullish(),
-  deviceNetType: z.enum(['device', 'nonNetDevice']),
+  deviceNetType: z.enum(['device', 'nonNetDevice']).nullish(),
   deviceGroupId: z.string().nullish(),
   deviceGroupType: z.string().nullish(),
 });
@@ -114,33 +114,34 @@ export const GetFamilyDevicesResponseSchema = HaierResponseSchema.extend({
 });
 
 export const DevDigitalModelPropertySchema = z.object({
-  defaultValue: z.string().nullish(),
+  name: z.string(),
   desc: z.string(),
   invisible: z.boolean(),
-  name: z.string(),
-  operationType: z.string(),
+  operationType: z.string().nullish(),
   readable: z.boolean(),
+  writable: z.boolean(),
+  defaultValue: z.string().nullish(),
   value: z.string().nullish(),
-  valueRange: z.object({
-    type: z.string(),
-    dataStep: z
-      .object({
+  valueRange: z.union([
+    z.object({
+      type: z.literal('STEP'),
+      dataStep: z.object({
         dataType: z.string(),
         maxValue: z.string(),
         minValue: z.string(),
         step: z.string(),
-      })
-      .nullish(),
-    dataList: z
-      .array(
+      }),
+    }),
+    z.object({
+      type: z.literal('LIST'),
+      dataList: z.array(
         z.object({
           data: z.string(),
-          desc: z.string(),
+          desc: z.string().nullish(),
         }),
-      )
-      .nullish(),
-  }),
-  writable: z.boolean(),
+      ),
+    }),
+  ]),
 });
 
 export const DevDigitalModelSchema = z.object({
@@ -152,7 +153,10 @@ export const GetDevDigitalModelResponseSchema = HaierResponseSchema.extend({
   detailInfo: z.record(z.string()).transform((data) => {
     return Object.fromEntries(
       Object.entries(data).map(([key, value]) => {
-        const { success, data } = DevDigitalModelSchema.safeParse(safeJsonParse(value));
+        const { success, data, error } = DevDigitalModelSchema.safeParse(safeJsonParse(value));
+        if (!success) {
+          throw new Error(inspectToString(error.issues));
+        }
         return [key, success ? data : undefined];
       }),
     );
@@ -179,4 +183,4 @@ export const WebSocketMessageSchema = z.object({
 export const GenMsgDownSchema = z.object({
   businType: z.literal('DigitalModel'),
   data: z.string(),
-})
+});
