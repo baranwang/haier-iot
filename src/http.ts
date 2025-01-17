@@ -5,9 +5,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { URL } from 'node:url';
 import { API_URL, APP_ID, APP_KEY, HttpError } from './constants';
-import { GetFamilyListResponseSchema, LoginResponseSchema, TokenInfoSchema } from './schema';
-import type { Options, TokenInfo } from './types';
-import { generateSequenceId, inspectToString, safeJsonParse } from './utils';
+import {
+  GetDevDigitalModelResponseSchema,
+  GetFamilyDevicesResponseSchema,
+  GetFamilyListResponseSchema,
+  LoginResponseSchema,
+  TokenInfoSchema,
+} from './schema';
+import type { CommandParams, Options, TokenInfo } from './types';
+import { generateCommandArgs, generateSequenceId, inspectToString, safeJsonParse } from './utils';
 
 export class HaierHttp {
   #axios!: AxiosInstance;
@@ -39,33 +45,33 @@ export class HaierHttp {
         const signStr = `${url.pathname}${url.search}${body}${APP_ID}${APP_KEY}${timestamp}`;
         config.headers.sign = createHash('sha256').update(signStr).digest('hex');
 
-        this.#logger.debug('[Request]', url.toString(), config.data ? inspectToString(config.data) : '');
+        this.logger.debug('[Request]', url.toString(), config.data ? inspectToString(config.data) : '');
         return config;
       } catch (error) {
-        this.#logger.error('[Request Error]', error);
+        this.logger.error('[Request Error]', error);
         return Promise.reject(error);
       }
     });
     this.#axios.interceptors.response.use(
       (res) => {
         if (res.data?.retCode !== '00000') {
-          this.#logger.error('[Response]', res.data.retCode, res.data.retInfo);
+          this.logger.error('[Response]', res.data.retCode, res.data.retInfo);
           throw new HttpError(res);
         }
         return res;
       },
       (err) => {
-        this.#logger.error('[Response error]', err);
+        this.logger.error('[Response error]', err);
         return Promise.reject(err);
       },
     );
   }
 
-  get #logger() {
+  get logger() {
     return this.options.logger || console;
   }
 
-  get #storageDir() {
+  get storageDir() {
     const storageDir = this.options.storageDir || path.resolve(path.dirname(__dirname), '.haier-iot');
     if (!fs.existsSync(storageDir)) {
       fs.mkdirSync(storageDir, { recursive: true });
@@ -74,7 +80,7 @@ export class HaierHttp {
   }
 
   get #tokenPath() {
-    const tokenDir = path.resolve(this.#storageDir, 'token');
+    const tokenDir = path.resolve(this.storageDir, 'token');
     if (!fs.existsSync(tokenDir)) {
       fs.mkdirSync(tokenDir, { recursive: true });
     }
@@ -82,7 +88,7 @@ export class HaierHttp {
   }
 
   get clientId() {
-    const cacheClientIdPath = path.resolve(this.#storageDir, 'client-id');
+    const cacheClientIdPath = path.resolve(this.storageDir, 'client-id');
     if (fs.existsSync(cacheClientIdPath)) {
       return fs.readFileSync(cacheClientIdPath, 'utf-8');
     }
@@ -150,7 +156,7 @@ export class HaierHttp {
       const token = await this.#tokenRefreshPromise;
       return token;
     } catch (error) {
-      this.#logger.error('获取 Token 失败', error);
+      this.logger.error('获取 Token 失败', error);
       return '';
     } finally {
       this.#tokenRefreshPromise = undefined;
@@ -159,7 +165,56 @@ export class HaierHttp {
 
   async getFamilyList() {
     const resp = await this.#axios.post(API_URL.GET_FAMILY_LIST, {});
-    const { data } = GetFamilyListResponseSchema.safeParse(resp.data);
-    return data?.data ?? []
+    const { success, data, error } = GetFamilyListResponseSchema.safeParse(resp.data);
+    if (!success) {
+      throw error;
+    }
+    return data?.data ?? [];
+  }
+
+  async getDevicesByFamilyId(familyId: string) {
+    const resp = await this.#axios.get(API_URL.GET_DEVICES_BY_FAMILY_ID, { params: { familyId } });
+    const { success, data, error } = GetFamilyDevicesResponseSchema.safeParse(resp.data);
+    if (!success) {
+      throw error;
+    }
+    return data?.data;
+  }
+
+  async getDevDigitalModel(deviceId: string) {
+    const resp = await this.#axios.post(API_URL.GET_DEV_DIGITAL_MODEL, {
+      deviceInfoList: [{ deviceId }],
+    });
+    const { success, data, error } = GetDevDigitalModelResponseSchema.safeParse(resp.data);
+    if (!success) {
+      throw error;
+    }
+    return data?.detailInfo[deviceId];
+  }
+
+  async sendCommands(deviceId: string, commands: CommandParams[]) {
+    const { sn, commandList } = generateCommandArgs(deviceId, commands);
+    await this.#axios.post(API_URL.BATCH_SEND_COMMAND.replace('{deviceId}', deviceId), {
+      sn,
+      cmdMsgList: commandList,
+    });
+  }
+
+  async getWssUrl() {
+    const accessToken = await this.getAccessToken();
+    if (!accessToken) {
+      return '';
+    }
+    const resp = await this.#axios.post<{
+      agAddr: string;
+      id: string;
+      name: string;
+    }>('https://uws.haier.net/gmsWS/wsag/assign', {});
+    const url = new URL(resp.data.agAddr);
+    url.protocol = 'wss:';
+    url.pathname = '/userag';
+    url.searchParams.set('token', accessToken);
+    url.searchParams.set('agClientId', this.clientId);
+    return url.toString();
   }
 }

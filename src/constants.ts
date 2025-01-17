@@ -1,4 +1,4 @@
-import { AxiosResponse } from 'axios';
+import type { AxiosResponse } from 'axios';
 import { inspectToString } from './utils';
 
 export const APP_ID = 'MB-UZHSH-0001';
@@ -12,6 +12,8 @@ export const API_URL = {
   BATCH_SEND_COMMAND: 'https://uws.haier.net/stdudse/v1/sendbatchCmd/{deviceId}',
   GET_WSS_URL: 'https://uws.haier.net/gmsWS/wsag/assign',
 };
+
+export const MAX_RECONNECT_ATTEMPTS = 5;
 
 export class HttpError extends Error {
   name = 'HttpError';

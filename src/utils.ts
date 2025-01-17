@@ -1,4 +1,6 @@
 import { inspect } from 'node:util';
+import { CommandParamsSchema } from './schema';
+import type { CommandParams } from './types';
 
 export const generateSequenceId = (time = Date.now()): string => {
   const date = new Date(time);
@@ -21,4 +23,36 @@ export const safeJsonParse = <T>(data: string): T | null => {
   } catch {
     return null;
   }
-}
+};
+
+export const generateCommandArgs = (deviceId: string, commands: CommandParams[]) => {
+  const sn = generateSequenceId();
+  const commandList = commands.map((command, index) => {
+    const { success, data } = CommandParamsSchema.transform((data) => {
+      if ('cmdArgs' in data && 'delaySeconds' in data && typeof data.cmdArgs === 'object') {
+        return {
+          cmdArgs: data.cmdArgs,
+          delaySeconds: data.delaySeconds,
+        };
+      }
+      return {
+        cmdArgs: data as Record<string, string>,
+        delaySeconds: 0,
+      };
+    }).safeParse(command);
+    if (!success) {
+      throw new Error(`Invalid command: ${inspectToString(command)}`);
+    }
+    return {
+      sn,
+      deviceId,
+      index,
+      subSn: `${sn}:${index}`,
+      ...data,
+    };
+  });
+  return {
+    sn,
+    commandList,
+  };
+};
