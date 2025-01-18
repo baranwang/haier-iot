@@ -1,9 +1,9 @@
-import type { AxiosInstance } from 'axios';
-import axios from 'axios';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { URL } from 'node:url';
+import type { AxiosInstance } from 'axios';
+import axios from 'axios';
 import { API_URL, APP_ID, APP_KEY, DEFAULT_CACHE_DIR, HttpError } from './constants';
 import {
   GetDevDigitalModelResponseSchema,
@@ -74,7 +74,7 @@ export class HaierHttp {
   }
 
   get storageDir() {
-    const storageDir = this.options.storageDir || DEFAULT_CACHE_DIR
+    const storageDir = this.options.storageDir || DEFAULT_CACHE_DIR;
     if (!fs.existsSync(storageDir)) {
       fs.mkdirSync(storageDir, { recursive: true });
     }
