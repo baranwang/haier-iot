@@ -7,16 +7,22 @@ export const HaierResponseSchema = z.object({
   data: z.unknown(),
 });
 
-export const TokenInfoSchema = z.object({
-  accountToken: z.string(),
-  expiresIn: z.number(),
-  tokenType: z.string(),
-  refreshToken: z.string(),
-  uhomeAccessToken: z.string(),
-  uhomeUserId: z.string(),
-  uocUserId: z.string(),
-  expiresAt: z.number(),
-});
+export const TokenInfoSchema = z
+  .object({
+    accountToken: z.string(),
+    expiresIn: z.number().describe('Token 过期时间，单位秒'),
+    tokenType: z.string(),
+    refreshToken: z.string(),
+    uhomeAccessToken: z.string(),
+    uhomeUserId: z.string(),
+    uocUserId: z.string(),
+
+    expiresAt: z.number().optional().describe('Token 过期毫秒级时间戳，非 API 返回字段'),
+  })
+  .transform((data) => ({
+    ...data,
+    expiresAt: data.expiresIn * 1000 + Date.now(),
+  }));
 
 export const LoginRequestSchema = z.object({
   username: z.string(),

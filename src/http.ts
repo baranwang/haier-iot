@@ -130,10 +130,10 @@ export class HaierHttp {
       throw new Error('登录失败');
     }
     const { tokenInfo } = data.data;
-    return {
-      ...tokenInfo,
-      expiresAt: Number.parseInt(resp.config.headers.timestamp) + tokenInfo.expiresIn * 1000,
-    };
+    if (resp.config.headers.timestamp) {
+      tokenInfo.expiresAt = Number.parseInt(resp.config.headers.timestamp) + tokenInfo.expiresIn * 1000;
+    }
+    return tokenInfo;
   }
 
   async #refreshToken(): Promise<string> {
