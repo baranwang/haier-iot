@@ -36,7 +36,11 @@ export class HaierHttp {
     this.#axios.interceptors.request.use(async (config) => {
       try {
         if (config.url !== API_URL.LOGIN) {
-          config.headers.accessToken = await this.getAccessToken();
+          const accessToken = await this.getAccessToken();
+          if (!accessToken) {
+            throw new Error('获取 Token 失败');
+          }
+          config.headers.accessToken = accessToken;
         }
         const timestamp = Date.now();
         config.headers.timestamp = timestamp;
@@ -159,7 +163,7 @@ export class HaierHttp {
       return token;
     } catch (error) {
       this.logger.error('获取 Token 失败', error);
-      return '';
+      throw error;
     } finally {
       this.#tokenRefreshPromise = undefined;
     }
