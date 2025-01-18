@@ -156,7 +156,7 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
 
   async getDevDigitalModel(deviceId: string, forceUpdate = false) {
     if (this.#digitalModelCache.has(deviceId) && !forceUpdate) {
-      return this.#digitalModelCache.getAsync(deviceId);
+      return this.#digitalModelCache.get(deviceId);
     }
     const devDigitalModel = await this.#httpAPI.getDevDigitalModel(deviceId);
     if (devDigitalModel) {
@@ -165,38 +165,32 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
     return devDigitalModel;
   }
 
-  sendCommands(deviceId: string, commands: CommandParams[]) {
+  async sendCommands(deviceId: string, commands: CommandParams[]) {
     try {
       if (!this.#ws || this.#ws.readyState !== WebSocket.OPEN) {
         throw new Error('WebSocket 连接未建立');
       }
       const { sn, commandList } = generateCommandArgs(deviceId, commands);
 
-      this.sendMessage('BatchCmdReq', {
+      await this.sendMessage('BatchCmdReq', {
         sn,
         trace: randomBytes(16).toString('hex'),
         data: commandList,
       });
 
-      this.#digitalModelCache
-        .getAsync(deviceId)
-        .then((digitalModel) => {
-          if (!digitalModel) {
-            return;
+      const digitalModel = this.#digitalModelCache.get(deviceId);
+      if (!digitalModel) {
+        return;
+      }
+      commandList.forEach((command) => {
+        Object.entries(command.cmdArgs).forEach(([key, value]) => {
+          const property = digitalModel.attributes.find((item) => item.name === key);
+          if (property && 'value' in property) {
+            property.value = value;
           }
-          commandList.forEach((command) => {
-            Object.entries(command.cmdArgs).forEach(([key, value]) => {
-              const property = digitalModel.attributes.find((item) => item.name === key);
-              if (property && 'value' in property) {
-                property.value = value;
-              }
-            });
-          });
-          return this.#digitalModelCache.setAsync(deviceId, digitalModel);
-        })
-        .catch(() => {
-          // 弱依赖，不处理错误
         });
+      });
+      this.#devDigitalModelUpdate(deviceId, digitalModel);
     } catch (error) {
       this.#logger.error('WebSocket 发送指令失败:', error);
       this.#logger.info('尝试使用 HTTP API 发送');

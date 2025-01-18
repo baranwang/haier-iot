@@ -3,58 +3,85 @@ import path from 'node:path';
 import { safeJsonParse } from './utils';
 
 export class DiskMap<T> {
-  constructor(private readonly cacheDir: string) {
+  private readonly memoryCache = new Map<string, T>();
+  private readonly writeQueue = new Map<string, T>();
+  private writeTimer: NodeJS.Timeout | null = null;
+
+  constructor(private readonly cacheDir: string, private readonly debounceTime = 1000) {
     if (!fs.existsSync(cacheDir)) {
       fs.mkdirSync(cacheDir, { recursive: true });
     }
+    this.#loadFromDisk();
   }
 
   // 改进文件路径处理
   #getFilePath(key: string): string {
-    // 确保文件名安全
     const sanitizedKey = encodeURIComponent(key);
     return path.join(this.cacheDir, `${sanitizedKey}.json`);
   }
 
-  // Load a value from a file
-  #loadFromFile(key: string): T | undefined {
-    const filePath = this.#getFilePath(key);
-    if (fs.existsSync(filePath)) {
+  // 从磁盘加载数据到内存
+  #loadFromDisk() {
+    const files = fs.readdirSync(this.cacheDir).filter((file) => path.extname(file) === '.json');
+    for (const file of files) {
+      const filePath = path.join(this.cacheDir, file);
       try {
-        return safeJsonParse<T>(fs.readFileSync(filePath, 'utf-8')) || undefined;
+        const key = decodeURIComponent(path.basename(file, '.json'));
+        const value = safeJsonParse<T>(fs.readFileSync(filePath, 'utf-8')) ?? undefined;
+        if (value !== undefined) {
+          this.memoryCache.set(key, value);
+        }
       } catch (error) {
-        console.error(`Failed to load cache for key: ${key}`, error);
-        return undefined;
+        console.error(`Failed to load cache file: ${filePath}`, error);
       }
     }
-    return undefined;
   }
 
-  #loadFromFileAsync(key: string): Promise<T | undefined> {
-    const filePath = this.#getFilePath(key);
-    return fs.promises
-      .access(filePath)
-      .then(() => fs.promises.readFile(filePath, 'utf-8'))
-      .then((data) => safeJsonParse<T>(data) || undefined);
+  // 批量保存到磁盘
+  #flushWriteQueue() {
+    for (const [key, value] of this.writeQueue.entries()) {
+      const filePath = this.#getFilePath(key);
+      try {
+        fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
+      } catch (error) {
+        console.error(`Failed to save cache for key: ${key}`, error);
+      }
+    }
+    this.writeQueue.clear();
+    this.writeTimer = null;
   }
 
-  // Save data to cache file
-  #saveToFile(key: string, value: T) {
-    const filePath = this.#getFilePath(key);
-    try {
-      fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
-    } catch (error) {
-      console.error(`Failed to save cache for key: ${key}`, error);
+  // 启动防抖写入
+  #scheduleWrite(key: string, value: T) {
+    this.writeQueue.set(key, value);
+    if (this.writeTimer === null) {
+      this.writeTimer = setTimeout(() => this.#flushWriteQueue(), this.debounceTime);
     }
   }
 
-  #saveToFileAsync(key: string, value: T): Promise<void> {
-    const filePath = this.#getFilePath(key);
-    return fs.promises.writeFile(filePath, JSON.stringify(value, null, 2));
+  set(key: string, value: T) {
+    this.memoryCache.set(key, value);
+    this.#scheduleWrite(key, value);
   }
 
-  // Delete cache file
-  #deleteFromFile(key: string) {
+  get(key: string): T | undefined {
+    return this.memoryCache.get(key);
+  }
+
+  has(key: string): boolean {
+    return this.memoryCache.has(key);
+  }
+
+  delete(key: string): boolean {
+    const exists = this.memoryCache.delete(key);
+    if (exists) {
+      this.writeQueue.delete(key); // 从写入队列中移除
+      this.#deleteFromDisk(key);
+    }
+    return exists;
+  }
+
+  #deleteFromDisk(key: string) {
     const filePath = this.#getFilePath(key);
     try {
       if (fs.existsSync(filePath)) {
@@ -65,37 +92,13 @@ export class DiskMap<T> {
     }
   }
 
-  set(key: string, value: T) {
-    this.#saveToFile(key, value);
-  }
-
-  setAsync(key: string, value: T): Promise<void> {
-    return this.#saveToFileAsync(key, value);
-  }
-
-  get(key: string): T | undefined {
-    return this.#loadFromFile(key);
-  }
-
-  getAsync(key: string): Promise<T | undefined> {
-    return this.#loadFromFileAsync(key);
-  }
-
-  has(key: string): boolean {
-    const filePath = this.#getFilePath(key);
-    return fs.existsSync(filePath);
-  }
-
-  delete(key: string): boolean {
-    const filePath = this.#getFilePath(key);
-    if (fs.existsSync(filePath)) {
-      this.#deleteFromFile(key);
-      return true;
-    }
-    return false;
-  }
-
   clear() {
+    this.memoryCache.clear();
+    this.writeQueue.clear();
+    if (this.writeTimer) {
+      clearTimeout(this.writeTimer);
+      this.writeTimer = null;
+    }
     fs.readdirSync(this.cacheDir).forEach((file) => {
       const filePath = path.join(this.cacheDir, file);
       try {
@@ -109,34 +112,22 @@ export class DiskMap<T> {
   }
 
   keys(): string[] {
-    return fs
-      .readdirSync(this.cacheDir)
-      .filter((file) => path.extname(file) === '.json')
-      .map((file) => path.basename(file, '.json'));
+    return Array.from(this.memoryCache.keys());
   }
 
   values(): T[] {
-    return this.keys()
-      .map((key) => this.get(key))
-      .filter((value): value is T => value !== undefined);
+    return Array.from(this.memoryCache.values());
   }
 
   entries(): [string, T][] {
-    return this.keys()
-      .map((key) => [key, this.get(key)] as [string, T])
-      .filter(([, value]) => value !== undefined);
+    return Array.from(this.memoryCache.entries());
   }
 
   forEach(callbackfn: (value: T, key: string) => void) {
-    for (const key of this.keys()) {
-      const value = this.get(key);
-      if (value !== undefined) {
-        callbackfn(value, key);
-      }
-    }
+    this.memoryCache.forEach(callbackfn);
   }
 
   get size(): number {
-    return this.keys().length;
+    return this.memoryCache.size;
   }
 }
