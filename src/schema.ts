@@ -133,28 +133,50 @@ export const DevDigitalModelPropertySchema = z.object({
   valueRange: z.union([
     z.object({
       type: z.literal('STEP'),
-      dataStep: z.object({
-        dataType: z.string(),
-        maxValue: z.string(),
-        minValue: z.string(),
-        step: z.string(),
-      }),
+      dataStep: z
+        .object({
+          dataType: z.string(),
+          maxValue: z.string(),
+          minValue: z.string(),
+          step: z.string(),
+        })
+        .optional(),
     }),
     z.object({
       type: z.literal('LIST'),
-      dataList: z.array(
-        z.object({
-          data: z.string(),
-          desc: z.string().nullish(),
-        }),
-      ),
+      dataList: z
+        .array(
+          z.object({
+            data: z.string(),
+            desc: z.string().nullish(),
+          }),
+        )
+        .default([]),
+    }),
+    z.object({
+      type: z.literal('DATE'),
+      dataDate: z.record(z.string().or(z.number())).nullish(),
+    }),
+    z.object({
+      type: z.literal('TIME'),
+      dataTime: z.record(z.string().or(z.number())).nullish(),
     }),
   ]),
 });
 
 export const DevDigitalModelSchema = z.object({
   alarms: z.array(z.unknown()),
-  attributes: z.array(DevDigitalModelPropertySchema),
+  attributes: z.array(z.any()).transform((data) => {
+    return data
+      .map((item) => {
+        const { success, data, error } = DevDigitalModelPropertySchema.safeParse(item);
+        if (!success) {
+          console.error('Failed to parse digital model property:', error);
+        }
+        return success ? data : null;
+      })
+      .filter((item) => item !== null);
+  }),
 });
 
 export const GetDevDigitalModelResponseSchema = HaierResponseSchema.extend({
@@ -163,7 +185,7 @@ export const GetDevDigitalModelResponseSchema = HaierResponseSchema.extend({
       Object.entries(data).map(([key, value]) => {
         const { success, data, error } = DevDigitalModelSchema.safeParse(safeJsonParse(value));
         if (!success) {
-          throw new Error(inspectToString(error.issues));
+          console.error(`Failed to parse digital model for device: ${key}`, error);
         }
         return [key, success ? data : undefined];
       }),
