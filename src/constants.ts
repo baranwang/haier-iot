@@ -1,5 +1,6 @@
 import type { AxiosResponse } from 'axios';
 import { inspectToString } from './utils';
+import cachedir from 'cachedir';
 
 export const APP_ID = 'MB-UZHSH-0001';
 export const APP_KEY = '5dfca8714eb26e3a776e58a8273c8752';
@@ -14,6 +15,8 @@ export const API_URL = {
 };
 
 export const MAX_RECONNECT_ATTEMPTS = 5;
+
+export const DEFAULT_CACHE_DIR = cachedir('haier-iot');
 
 export class HttpError extends Error {
   name = 'HttpError';

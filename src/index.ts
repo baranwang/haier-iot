@@ -14,7 +14,6 @@ export type { DeviceInfo, DevDigitalModel, DevDigitalModelProperty, CommandParam
 
 interface HaierApiEvents {
   devDigitalModelUpdate: [deviceId: string, devDigitalModel: DevDigitalModel];
-  afterConnect: [];
 }
 
 interface WebSocketState {
@@ -37,7 +36,7 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
     reconnectAttempts: 0,
   };
 
-  constructor(private readonly options: Options) {
+  constructor(options: Options) {
     super();
     this.#httpAPI = new HaierHttp(options);
     this.#digitalModelCache = new DiskMap<DevDigitalModel>(path.resolve(this.#httpAPI.storageDir, 'digital-model'));
@@ -48,8 +47,9 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
   }
 
   set #ws(ws: WebSocket) {
-    this.#setupWebSocket(ws);
+    this.#cleanupWebSocket();
     this.#_ws = ws;
+    this.#setupWebSocket(ws);
   }
 
   get #logger() {
@@ -77,55 +77,74 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
   }
 
   async connect() {
+    if (this.#state.isConnecting) {
+      this.#logger.warn('WebSocket 正在连接中');
+      return;
+    }
+
     const url = await this.#httpAPI.getWssUrl();
     if (!url) {
       this.#logger.error('获取 WebSocket 地址失败');
       return;
     }
 
-    this.#cleanupWebSocket();
-    this.#ws = new WebSocket(url);
+    this.#state.isConnecting = true;
 
-    return new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('WebSocket 连接超时'));
-      }, 10000);
+    try {
+      this.#ws = new WebSocket(url);
 
-      this.#ws.once('open', () => {
-        clearTimeout(timeout);
-        this.#logger.info('WebSocket 连接成功');
-        this.emit('afterConnect');
-        resolve();
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('WebSocket 连接超时'));
+        }, 10000);
+
+        this.#ws.once('open', () => {
+          clearTimeout(timeout);
+          this.#logger.info('WebSocket 连接成功');
+          resolve();
+        });
+
+        this.#ws.once('error', (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
       });
-
-      this.#ws.once('error', (error) => {
-        clearTimeout(timeout);
-        reject(error);
-      });
-    });
+    } finally {
+      this.#state.isConnecting = false;
+    }
   }
 
   async sendMessage(topic: string, content: Record<string, unknown>) {
     const { success, data, error } = WebSocketMessageSchema.safeParse({ topic, content });
     if (!success) {
       this.#logger.error('WebSocket 消息格式错误:', error);
+      return;
     }
+
     if (!this.#ws || this.#ws.readyState !== WebSocket.OPEN) {
       this.#logger.error('WebSocket 连接未建立');
       return;
     }
-    this.#ws.send(
-      JSON.stringify({
-        agClientId: this.#httpAPI.clientId,
-        ...data,
-      }),
-      (err) => {
-        if (err) {
-          this.#logger.error('WebSocket 消息发送失败:', err);
-        }
-      },
-    );
-    this.#logger.debug('⬆️', `[${topic}]`, inspectToString(content));
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        this.#ws.send(
+          JSON.stringify({
+            agClientId: this.#httpAPI.clientId,
+            ...data,
+          }),
+          (err) => {
+            if (err) reject(err);
+            else resolve();
+          },
+        );
+      });
+
+      this.#logger.debug('⬆️', `[${topic}]`, inspectToString(content));
+    } catch (error) {
+      this.#logger.error('发送消息失败:', error);
+      throw error;
+    }
   }
 
   subscribeDevices(deviceIds: string[]) {
@@ -135,13 +154,13 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
     });
   }
 
-  async getDevDigitalModel(deviceId: string) {
-    if (this.#digitalModelCache.has(deviceId)) {
+  async getDevDigitalModel(deviceId: string, forceUpdate = false) {
+    if (this.#digitalModelCache.has(deviceId) && !forceUpdate) {
       return this.#digitalModelCache.getAsync(deviceId);
     }
     const devDigitalModel = await this.#httpAPI.getDevDigitalModel(deviceId);
     if (devDigitalModel) {
-      this.#digitalModelCache.setAsync(deviceId, devDigitalModel);
+      this.#devDigitalModelUpdate(deviceId, devDigitalModel);
     }
     return devDigitalModel;
   }
@@ -173,16 +192,20 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
               }
             });
           });
-          this.#digitalModelCache.setAsync(deviceId, digitalModel);
+          return this.#digitalModelCache.setAsync(deviceId, digitalModel);
         })
         .catch(() => {
           // 弱依赖，不处理错误
         });
     } catch (error) {
-      this.#logger.warn('指令发送失败，尝试使用 HTTP API 发送');
-      return this.#httpAPI.sendCommands(deviceId, commands);
+      this.#logger.error('WebSocket 发送指令失败:', error);
+      this.#logger.info('尝试使用 HTTP API 发送');
+      return this.#httpAPI.sendCommands(deviceId, commands).catch((err) => {
+        this.#logger.error('指令发送失败:', err);
+      });
     }
   }
+
   #setupWebSocket(ws: WebSocket) {
     ws.addEventListener('open', this.#heartbeat.bind(this));
     ws.addEventListener('message', this.#handleMessage.bind(this));
@@ -208,13 +231,15 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
     if (this.#state.isConnecting || this.#state.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       return;
     }
+
     this.#state.isConnecting = true;
     this.#state.reconnectAttempts += 1;
+
     try {
       const delay = 2000 * 2 ** this.#state.reconnectAttempts;
       await new Promise((resolve) => setTimeout(resolve, delay));
 
-      this.#logger.info('正在重新连接 WebSocket...');
+      this.#logger.info(`正在进行第 ${this.#state.reconnectAttempts} 次重连...`);
       await this.connect();
 
       if (this.#state.subscribedDevices.length > 0) {
@@ -225,7 +250,7 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
       this.#state.reconnectAttempts = 0;
     } catch (error) {
       this.#logger.error('WebSocket 重连失败:', error);
-      this.#reconnectWebSocket();
+      await this.#reconnectWebSocket();
     } finally {
       this.#state.isConnecting = false;
     }
@@ -235,15 +260,15 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
     if (this.#state.heartbeatInterval) {
       clearInterval(this.#state.heartbeatInterval);
     }
-    this.#state.heartbeatInterval = setInterval(() => {
+    this.#state.heartbeatInterval = setInterval(async () => {
       try {
-        this.sendMessage('HeartBeat', {
+        await this.sendMessage('HeartBeat', {
           sn: generateSequenceId(),
           duration: 0,
         });
       } catch (error) {
         this.#logger.error('心跳消息发送失败', error);
-        this.#reconnectWebSocket();
+        await this.#reconnectWebSocket();
       }
     }, 60 * 1000);
   }
@@ -296,11 +321,16 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
           this.#logger.error('DigitalModel 解析失败:', validatedDigitalModel.error);
           return;
         }
-        this.emit('devDigitalModelUpdate', parsedBase64Data.dev, validatedDigitalModel.data);
+        this.#devDigitalModelUpdate(parsedBase64Data.dev, validatedDigitalModel.data);
       }
     } catch (error) {
       this.#logger.error('GenMsgDown 解析失败:', error);
     }
+  }
+
+  #devDigitalModelUpdate(deviceId: string, devDigitalModel: DevDigitalModel) {
+    this.#digitalModelCache.set(deviceId, devDigitalModel);
+    this.emit('devDigitalModelUpdate', deviceId, devDigitalModel);
   }
 }
 
