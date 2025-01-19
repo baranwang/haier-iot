@@ -13,10 +13,7 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": [
-    "dist",
-    "CHANGELOG.md"
-  ],
+  "files": ["dist", "CHANGELOG.md"],
   "scripts": {
     "build": "rslib build",
     "check": "biome check --write",
@@ -24,6 +21,9 @@
     "format": "biome format --write",
     "prerelease": "pnpm build",
     "release": "changeset publish"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "axios": "^1.7.9",
