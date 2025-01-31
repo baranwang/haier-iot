@@ -1,5 +1,11 @@
 # haier-iot
 
+## 1.2.1
+
+### Patch Changes
+
+- 185bc80: 修复 getFamilyList 结果可能为空的情况
+
 ## 1.2.0
 
 ### Minor Changes
