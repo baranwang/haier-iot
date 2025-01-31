@@ -140,7 +140,7 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
         );
       });
 
-      this.#logger.debug('⬆️', `[${topic}]`, inspectToString(content));
+      this.#logger.info('⬆️', `[${topic}]`, inspectToString(content));
     } catch (error) {
       this.#logger.error('发送消息失败:', error);
       throw error;
@@ -278,11 +278,11 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
       this.#logger.error('WebSocket 消息解析失败:', error);
       return;
     }
-    this.#logger.debug('⬇️', `[${data.topic}]`);
+    this.#logger.info('⬇️', `[${data.topic}]`);
 
     switch (data.topic) {
       case 'HeartBeatAck':
-        this.#logger.debug('💓', data.content);
+        this.#logger.info('💓', data.content);
         break;
       case 'GenMsgDown':
         this.#handleGenMsgDown(data.content);

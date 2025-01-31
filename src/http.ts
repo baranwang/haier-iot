@@ -104,7 +104,7 @@ export class HaierHttp {
     return clientId;
   }
 
-  get tokenInfo() {
+  private get tokenInfo() {
     if (!this.#tokenInfo && fs.existsSync(this.#tokenPath)) {
       const { data } = TokenInfoSchema.safeParse(safeJsonParse<TokenInfo>(fs.readFileSync(this.#tokenPath, 'utf-8')));
       this.#tokenInfo = data;
@@ -114,7 +114,7 @@ export class HaierHttp {
     }
     return undefined;
   }
-  set tokenInfo(tokenInfo: TokenInfo | undefined) {
+  private set tokenInfo(tokenInfo: TokenInfo | undefined) {
     fs.writeFileSync(this.#tokenPath, JSON.stringify(tokenInfo));
     this.#tokenInfo = tokenInfo;
   }
@@ -129,21 +129,21 @@ export class HaierHttp {
       password,
       phoneType: 'iPhone16,2',
     });
-    const { data } = LoginResponseSchema.safeParse(resp.data);
-    if (!data) {
+    const { success, data, error } = LoginResponseSchema.safeParse(resp.data);
+    if (!success) {
+      this.logger.error('登录失败', error);
       throw new Error('登录失败');
     }
     const { tokenInfo } = data.data;
-    if (resp.config.headers.timestamp) {
-      tokenInfo.expiresAt = Number.parseInt(resp.config.headers.timestamp) + tokenInfo.expiresIn * 1000;
-    }
+    const timestamp = resp.config.headers.timestamp ? Number.parseInt(resp.config.headers.timestamp) : Date.now();
+    tokenInfo.expiresAt = timestamp + tokenInfo.expiresIn * 1000;
     return tokenInfo;
   }
 
   async #refreshToken(): Promise<string> {
     const tokenInfo = await this.login();
     if (!tokenInfo) {
-      return '';
+      throw new Error('获取 Token 失败');
     }
     this.tokenInfo = tokenInfo;
     return tokenInfo.uhomeAccessToken;
