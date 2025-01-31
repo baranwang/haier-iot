@@ -44,10 +44,10 @@ export const FamilyInfoSchema = z.object({
 export const GetFamilyListResponseSchema = HaierResponseSchema.extend({
   data: z
     .object({
-      createfamilies: z.array(FamilyInfoSchema),
-      joinfamilies: z.array(FamilyInfoSchema),
+      createfamilies: z.array(FamilyInfoSchema).nullish(),
+      joinfamilies: z.array(FamilyInfoSchema).nullish(),
     })
-    .transform((data) => [...data.createfamilies, ...data.joinfamilies]),
+    .transform((data) => [...(data.createfamilies ?? []), ...(data.joinfamilies ?? [])]),
 });
 
 export const DevicePermissionSchema = z.object({
