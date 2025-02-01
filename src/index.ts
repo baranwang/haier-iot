@@ -62,7 +62,8 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
 
   async getFamilyList() {
     try {
-      return this.#httpAPI.getFamilyList();
+      const familyList = await this.#httpAPI.getFamilyList();
+      return familyList;
     } catch (error) {
       return [];
     }
@@ -70,7 +71,8 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
 
   async getDevicesByFamilyId(familyId: string) {
     try {
-      return this.#httpAPI.getDevicesByFamilyId(familyId);
+      const devices = await this.#httpAPI.getDevicesByFamilyId(familyId);
+      return devices;
     } catch (error) {
       return [];
     }
@@ -147,9 +149,9 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
     }
   }
 
-  subscribeDevices(deviceIds: string[]) {
+  async subscribeDevices(deviceIds: string[]) {
     this.#state.subscribedDevices = deviceIds;
-    this.sendMessage('BoundDevs', {
+    await this.sendMessage('BoundDevs', {
       devs: deviceIds,
     });
   }

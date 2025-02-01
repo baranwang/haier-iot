@@ -17,7 +17,6 @@ export class DiskMap<T> {
     this.#loadFromDisk();
   }
 
-  // 改进文件路径处理
   #getFilePath(key: string): string {
     const sanitizedKey = encodeURIComponent(key);
     return path.join(this.cacheDir, `${sanitizedKey}.json`);

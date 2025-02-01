@@ -9,13 +9,12 @@ import {
   GetDevDigitalModelResponseSchema,
   GetFamilyDevicesResponseSchema,
   GetFamilyListResponseSchema,
+  LoginRequestSchema,
   LoginResponseSchema,
   TokenInfoSchema,
 } from './schema';
 import type { CommandParams, GetDevDigitalModelResponse, Options, TokenInfo } from './types';
 import { generateCommandArgs, generateSequenceId, inspectToString, safeJsonParse } from './utils';
-
-export type { DevDigitalModel, DeviceInfo } from './types';
 export class HaierHttp {
   #axios!: AxiosInstance;
 
@@ -120,15 +119,8 @@ export class HaierHttp {
   }
 
   async login() {
-    const { username, password } = this.options;
-    if (!username || !password) {
-      throw new Error('用户名或密码为空');
-    }
-    const resp = await this.#axios.post(API_URL.LOGIN, {
-      username,
-      password,
-      phoneType: 'iPhone16,2',
-    });
+    const loginRequestParams = LoginRequestSchema.parse(this.options);
+    const resp = await this.#axios.post(API_URL.LOGIN, loginRequestParams);
     const { success, data, error } = LoginResponseSchema.safeParse(resp.data);
     if (!success) {
       this.logger.error('登录失败', error);

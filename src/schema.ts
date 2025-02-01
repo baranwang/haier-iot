@@ -25,9 +25,9 @@ export const TokenInfoSchema = z
   }));
 
 export const LoginRequestSchema = z.object({
-  username: z.string(),
-  password: z.string(),
-  phoneType: z.string(),
+  username: z.string({ message: '用户名不能为空' }),
+  password: z.string({ message: '密码不能为空' }),
+  phoneType: z.string().optional().default('iPhone16,2'),
 });
 
 export const LoginResponseSchema = HaierResponseSchema.extend({
@@ -166,8 +166,8 @@ export const DevDigitalModelPropertySchema = z.object({
 
 export const DevDigitalModelSchema = z.object({
   alarms: z.array(z.unknown()),
-  attributes: z.array(z.any()).transform((data) => {
-    return data
+  attributes: z.array(z.any()).transform((attr) =>
+    attr
       .map((item) => {
         const { success, data, error } = DevDigitalModelPropertySchema.safeParse(item);
         if (!success) {
@@ -175,8 +175,8 @@ export const DevDigitalModelSchema = z.object({
         }
         return success ? data : null;
       })
-      .filter((item) => item !== null);
-  }),
+      .filter((item) => item !== null),
+  ),
 });
 
 export const GetDevDigitalModelResponseSchema = HaierResponseSchema.extend({
