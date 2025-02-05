@@ -206,7 +206,12 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
     ws.addEventListener('open', this.#heartbeat.bind(this));
     ws.addEventListener('message', this.#handleMessage.bind(this));
     ws.addEventListener('error', (event) => this.#logger.error('WebSocket error:', event));
-    ws.addEventListener('close', (event) => this.#logger.error('WebSocket closed:', event));
+    ws.addEventListener('close', (event) => {
+      this.#logger.error('WebSocket closed:', event);
+      this.#reconnectWebSocket().catch((error) => {
+        this.#logger.error('WebSocket 重连失败:', error);
+      });
+    });
   }
 
   #cleanupWebSocket() {
