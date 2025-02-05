@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import EventEmitter from 'node:events';
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 import { type MessageEvent, WebSocket } from 'ws';
 import { MAX_RECONNECT_ATTEMPTS } from './constants';
@@ -110,6 +111,14 @@ export class HaierIoT extends EventEmitter<HaierApiEvents> {
           clearTimeout(timeout);
           reject(error);
         });
+      });
+    } catch {
+      this.#logger.error('WebSocket 连接失败');
+      await fs.rmdir(this.#httpAPI.storageDir, { recursive: true }).catch((error) => {
+        this.#logger.error('删除存储目录失败:', error);
+      });
+      await this.#reconnectWebSocket().catch((error) => {
+        this.#logger.error('WebSocket 重连失败:', error);
       });
     } finally {
       this.#state.isConnecting = false;
