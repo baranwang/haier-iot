@@ -1,5 +1,11 @@
 # haier-iot
 
+## 1.2.3
+
+### Patch Changes
+
+- a1737df: 增加 WebSocket 连接失败时的错误处理和重连逻辑
+
 ## 1.2.2
 
 ### Patch Changes
