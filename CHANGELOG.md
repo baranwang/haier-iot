@@ -1,5 +1,11 @@
 # haier-iot
 
+## 1.2.2
+
+### Patch Changes
+
+- 5b5a98c: 增加 WebSocket 关闭事件处理，添加重连逻辑及错误日志
+
 ## 1.2.1
 
 ### Patch Changes
